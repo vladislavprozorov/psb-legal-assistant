@@ -93,16 +93,16 @@ def document(doc_id: str) -> dict:
 @app.post("/api/chat")
 def chat(req: ChatRequest) -> dict:
     a = assistant()
-    if a.client is None:
-        raise HTTPException(503, "Не настроено подключение к LLM: задайте LLM_BASE_URL и LLM_API_KEY в .env")
     msgs = [m.model_dump() for m in req.messages][-MAX_HISTORY:]
     if msgs[-1]["role"] != "user":
         raise HTTPException(400, "Последнее сообщение должно быть от пользователя")
     try:
+        if a.client is None:
+            raise RuntimeError("не заданы LLM_BASE_URL / LLM_API_KEY")
         res = a.answer(msgs)
     except Exception as exc:  # noqa: BLE001
-        lc.log(f"Ошибка ответа: {exc}")
-        raise HTTPException(502, "Языковая модель недоступна, попробуйте ещё раз") from exc
+        lc.log(f"Ошибка ответа, отдаём найденные положения: {exc}")
+        res = a.extractive_answer(msgs)
     return {
         "answer": res.answer,
         "status": res.status,

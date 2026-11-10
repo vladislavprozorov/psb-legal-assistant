@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -25,6 +27,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         if self.path.endswith("/chat/completions"):
+            time.sleep(float(os.environ.get("MOCK_DELAY", "0")))
             last = body["messages"][-1]["content"]
             if "ЧЕРНОВИК ОТВЕТА" in last:
                 content = json.dumps({"ok": True, "issues": "", "answer": ""}, ensure_ascii=False)

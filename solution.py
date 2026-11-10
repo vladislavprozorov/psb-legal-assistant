@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import os
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
@@ -20,8 +21,8 @@ import legal_core as lc
 
 START = time.time()
 TIME_LIMIT = lc.env_int("TIME_BUDGET_SEC", 20 * 60, 60, 3 * 3600)
-SAFETY = 90           # секунд запаса на запись файла и завершение
-VERIFY_CUTOFF = 0.55  # после этой доли бюджета самопроверка отключается
+SAFETY = min(90, int(TIME_LIMIT * 0.12))  # секунд запаса на запись файла и завершение
+PROJECTION_LIMIT = 0.8  # если прогноз времени выше этой доли бюджета — отключаем самопроверку
 FALLBACK = ("Не удалось сформировать проверенный ответ по базе знаний. "
             "Уточните вопрос: укажите документ, контрагента или период.")
 
@@ -70,22 +71,43 @@ def main() -> None:
 
     answers: dict[str, str] = {}
     deadline = START + TIME_LIMIT - SAFETY
+    durations: list[float] = []
+    lock = threading.Lock()
+    total = len(questions)
+
+    def adapt_budget() -> None:
+        """Прогноз: успеем ли с самопроверкой? Если нет — отключаем её заранее."""
+        with lock:
+            n = len(durations)
+            if settings.verify_mode == "off" or n < workers:
+                return
+            avg = sum(durations[-30:]) / len(durations[-30:])
+            projected = (time.time() - START) + (total - n) * avg / workers
+            if projected > TIME_LIMIT * PROJECTION_LIMIT:
+                settings.verify_mode = "off"
+                lc.log(f"Прогноз {projected:.0f} c > {TIME_LIMIT * PROJECTION_LIMIT:.0f} c: самопроверка отключена")
 
     def work(qid: str, question: str) -> tuple[str, str]:
-        if time.time() > START + TIME_LIMIT * VERIFY_CUTOFF and settings.use_verifier:
-            settings.use_verifier = False
-            lc.log("Бюджет времени: самопроверка отключена для оставшихся вопросов")
-        for attempt in range(2):
-            if time.time() > deadline:
-                break
+        adapt_budget()
+        t0 = time.time()
+        try:
+            for attempt in range(2):
+                if time.time() > deadline:
+                    break
+                try:
+                    res = assistant.answer(question)
+                    if res.answer.strip():
+                        return qid, res.answer
+                except Exception as exc:  # noqa: BLE001
+                    lc.log(f"Вопрос {qid}, попытка {attempt + 1}: {type(exc).__name__}: {str(exc)[:200]}")
+                    time.sleep(2)
             try:
-                res = assistant.answer(question)
-                if res.answer.strip():
-                    return qid, res.answer
-            except Exception as exc:  # noqa: BLE001
-                lc.log(f"Вопрос {qid}, попытка {attempt + 1}: {type(exc).__name__}: {str(exc)[:200]}")
-                time.sleep(2)
-        return qid, FALLBACK
+                return qid, assistant.extractive_answer(question).answer
+            except Exception:  # noqa: BLE001
+                return qid, FALLBACK
+        finally:
+            with lock:
+                durations.append(time.time() - t0)
 
     pool = ThreadPoolExecutor(max_workers=workers)
     pending = {pool.submit(work, qid, q) for qid, q in questions}
@@ -93,7 +115,13 @@ def main() -> None:
     while pending:
         timeout = deadline - time.time()
         if timeout <= 0:
-            lc.log(f"Тайм-аут: без ответа осталось {len(pending)} вопросов")
+            lc.log(f"Тайм-аут: без ответа осталось {len(pending)} вопросов — даём ответ из найденных положений")
+            for qid, q in questions:
+                if qid not in answers:
+                    try:
+                        answers[qid] = assistant.extractive_answer(q).answer
+                    except Exception:  # noqa: BLE001
+                        pass
             break
         finished, pending = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
         for fut in finished:
