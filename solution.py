@@ -88,6 +88,9 @@ def main() -> None:
                 lc.log(f"Прогноз {projected:.0f} c > {TIME_LIMIT * PROJECTION_LIMIT:.0f} c: самопроверка отключена")
 
     def work(qid: str, question: str) -> tuple[str, str]:
+        if len(question.strip()) < 2:
+            return qid, ("Вопрос не задан. Сформулируйте, пожалуйста, вопрос по договорам, "
+                         "внутренним документам или законам из базы знаний.")
         adapt_budget()
         t0 = time.time()
         try:

@@ -491,9 +491,23 @@ class LLMClient:
             "temperature": self.s.temperature if temperature is None else temperature,
             "max_tokens": max_tokens or self.s.max_tokens,
         }
-        data = self._post("/chat/completions", self.s.api_key, payload)
-        content = data["choices"][0]["message"].get("content") or ""
-        return content.strip()
+        for attempt in range(2):
+            data = self._post("/chat/completions", self.s.api_key, payload)
+            choice = (data.get("choices") or [{}])[0]
+            msg = choice.get("message") or {}
+            content = msg.get("content") or ""
+            if isinstance(content, list):  # формат «частей» у некоторых прокси
+                content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+            content = strip_reasoning(content)
+            if content:
+                return content
+            # пусто: модель «додумала» лимит токенов в рассуждениях — повторяем с запасом
+            if choice.get("finish_reason") == "length" or msg.get("reasoning_content"):
+                payload["max_tokens"] = min(int(payload["max_tokens"] * 2), 8192)
+                log("Пустой ответ модели (лимит токенов) — повтор с увеличенным max_tokens")
+                continue
+            break
+        raise RuntimeError("Модель вернула пустой ответ")
 
     def embed(self, texts: list[str], batch: int = 32) -> np.ndarray:
         vectors: list[list[float]] = []
@@ -825,8 +839,16 @@ class LegalAssistant:
 
         raw = self.client.chat(llm_msgs)
         parsed = parse_json(raw)
+        if not parsed.get("answer") and raw.lstrip().startswith("{"):
+            # JSON без поля answer — не отдаём пользователю сырой JSON, пробуем ещё раз
+            raw = self.client.chat(llm_msgs, temperature=0.2)
+            parsed = parse_json(raw)
+            if not parsed.get("answer") and raw.lstrip().startswith("{"):
+                raise RuntimeError("Модель вернула JSON без ответа")
         draft = (parsed.get("answer") or raw).strip()
         status = parsed.get("status", "answer")
+        if status not in ("answer", "partial", "no_data", "clarify", "refuse", "out_of_scope"):
+            status = "answer"
         src_ids = [s for s in parsed.get("sources", []) if isinstance(s, str)]
         t_gen = time.time() - t0 - t_ret
 
@@ -900,6 +922,14 @@ class LegalAssistant:
 # Утилиты
 # --------------------------------------------------------------------------- #
 
+THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S | re.I)
+
+
+def strip_reasoning(text: str) -> str:
+    """Убирает блоки рассуждений <think>…</think>, которые возвращают reasoning-модели."""
+    return THINK_RE.sub("", text or "").strip()
+
+
 def parse_json(raw: str) -> dict:
     if not raw:
         return {}
@@ -915,6 +945,8 @@ def parse_json(raw: str) -> dict:
         except json.JSONDecodeError:
             continue
     m = re.search(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.S)
+    if not m:  # ответ оборван лимитом токенов — берём то, что успело прийти
+        m = re.search(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)$', text, re.S)
     if m:
         try:
             return {"answer": json.loads('"' + m.group(1) + '"')}

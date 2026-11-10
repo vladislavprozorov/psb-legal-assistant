@@ -105,6 +105,33 @@ mkdir -p /tmp/run/data && cp data/knowledge-base.zip /tmp/run/data/ && cp data/r
 cd /tmp/run && LLM_BASE_URL=... LLM_API_KEY=... python /path/to/solution.py
 ```
 
+## Тестирование
+
+Все офлайн-проверки одной командой (ключ не нужен):
+
+```bash
+./tools/run_tests.sh
+```
+
+| Проверка | Что гарантирует |
+|---|---|
+| `tools/selftest.py` | 30 проверок ядра: санитизация, редакции, разбиение, диалоги, аудит ссылок (0 ложных срабатываний на эталонах) |
+| `tools/retrieval_check.py` | нужная статья закона попадает в контекст (15/15) |
+| `tools/edge_cases.py` | `solution.py` корректен при BOM/CRLF, лишних колонках, повторах id, пустом вопросе, `kb.zip`, вложенных папках, DOCX, cp1251, базе-папке, без `DATA_DIR` |
+| `tools/chaos_test.py` | прокси отвечает 429/500, `<think>`, обрезанным JSON, пустым ответом, реранкер недоступен — сырой JSON в ответы не попадает |
+
+Дополнительно проверено: образ собирается, контейнер healthy и работает не от root; сабмит запускается в чистом `python:3.12-slim` только с `requirements.txt` из ZIP; совместимость с Python 3.9+.
+
+## Когда появится ключ
+
+```bash
+cp .env.example .env                       # вписать LLM_BASE_URL и LLM_API_KEY
+.venv/bin/python tools/check_llm.py --full # endpoints, JSON, задержки, прогноз времени на 100 вопросов
+.venv/bin/python tools/eval_demo.py --judge          # 18 демо-вопросов против эталона
+.venv/bin/python tools/eval_demo.py --judge --questions tools/extra_questions.csv --golden data/raw/demo_output.csv  # провокации (без эталона — смотреть отчёт)
+docker compose up --build                  # веб-демо на http://localhost:8000
+```
+
 ## Порядок проверки основного сценария
 
 1. `docker compose up --build`, открыть http://localhost:8000 (в шапке — «21 документов · модель подключена»).
