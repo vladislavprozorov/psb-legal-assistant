@@ -97,6 +97,19 @@ button { font: inherit; cursor: pointer; }
 .msg.assistant.active { outline: 2px solid var(--accent); }
 .msg .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
 .msg .meta .link { background: none; border: 0; color: var(--accent); padding: 0; font-size: 12px; text-decoration: underline; }
+.cite {
+  border: 0; padding: 0 1px; margin: 0; border-radius: 3px; font: inherit; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent); text-decoration: underline dotted;
+}
+.cite:hover { text-decoration: underline; }
+.tools { margin-left: auto; display: inline-flex; gap: 4px; }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 6px; padding: 1px 8px; font-size: 12px;
+}
+.icon-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.icon-btn:disabled { opacity: .45; cursor: default; }
+.icon-btn.chosen { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
 .msg.error { background: var(--bad-soft); color: var(--bad); }
 .typing { display: inline-flex; gap: 4px; }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }

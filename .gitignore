@@ -10,3 +10,4 @@ data/kb/
 data/sample/
 .claude/
 .DS_Store
+feedback.jsonl

@@ -36,8 +36,10 @@ def vec(text: str, dim: int = 64) -> list[float]:
 
 
 def answer_json(last: str) -> str:
-    return json.dumps({"status": "answer", "answer": "Мок-ответ: «" + last[:60] + "», п. 3.1.",
-                       "sources": ["D1.10"]}, ensure_ascii=False)
+    return json.dumps({"status": "answer",
+                       "answer": "Мок-ответ: «" + last[:60] + "». Арендная плата — 450 000 рублей в месяц "
+                                 "(договор № А-08/2024, п. 3.1), вносится до 5-го числа (п. 3.2).",
+                       "sources": ["D1.9", "D1.10"]}, ensure_ascii=False)
 
 
 class Handler(BaseHTTPRequestHandler):

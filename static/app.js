@@ -44,9 +44,53 @@ function addUser(text) {
   scrollDown();
 }
 
-function addAssistant(res, idx) {
+// Делает «п. 3.1», «ст. 70» в тексте ответа кликабельными: открывают документ на нужном фрагменте
+const CITE_RE = /(п\.\s*\d+(?:\.\d+)*|ст\.\s*\d+(?:\.\d+)?)/g;
+function findCite(res, token) {
+  const pool = [...(res.sources || []), ...(res.retrieved || [])];
+  const num = token.replace(/^(п|ст)\.\s*/, "");
+  if (token.startsWith("п")) return pool.find((s) => s.label === "п. " + num);
+  return pool.find((s) => s.kind === "law" && new RegExp("ст\\. " + num.replace(".", "\\.") + "(\\D|$)").test(s.doc_title));
+}
+function renderAnswer(res) {
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  res.answer.replace(CITE_RE, (m, _g, offset) => {
+    const hit = findCite(res, m);
+    if (!hit) return m;
+    frag.append(document.createTextNode(res.answer.slice(last, offset)));
+    const b = el("button", "cite", m);
+    b.type = "button";
+    b.title = `${hit.doc_title}, ${hit.label}`;
+    b.addEventListener("click", () => openDoc(hit.doc_id, hit.id));
+    frag.append(b);
+    last = offset + m.length;
+    return m;
+  });
+  frag.append(document.createTextNode(res.answer.slice(last)));
+  return frag;
+}
+
+function copyText(res, question) {
+  const src = (res.sources || []).map((s) => `— ${s.doc_title}, ${s.label}: ${s.text.replace(/\s+/g, " ")}`);
+  return `Вопрос: ${question}\n\nОтвет: ${res.answer}` + (src.length ? `\n\nИсточники:\n${src.join("\n")}` : "");
+}
+
+async function sendFeedback(res, question, vote, btns) {
+  btns.forEach((b) => { b.disabled = true; b.classList.toggle("chosen", b.dataset.vote === vote); });
+  try {
+    await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vote, question, answer: res.answer, status: res.status,
+        sources: (res.sources || []).map((s) => s.id) }),
+    });
+  } catch (e) { /* оценка необязательна */ }
+}
+
+function addAssistant(res, idx, question) {
   const box = el("div", "msg assistant");
-  box.append(document.createTextNode(res.answer));
+  box.append(renderAnswer(res));
   const meta = el("div", "meta");
   const [label, cls] = STATUS[res.status] || STATUS.answer;
   meta.append(el("span", "pill " + cls, label));
@@ -57,6 +101,22 @@ function addAssistant(res, idx) {
   link.addEventListener("click", () => showSources(idx));
   meta.append(link);
   if (res.timings) meta.append(el("span", "pill muted", `${res.timings.total} с`));
+  const tools = el("span", "tools");
+  const copy = el("button", "icon-btn", "Скопировать");
+  copy.type = "button";
+  copy.title = "Скопировать ответ с источниками";
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(copyText(res, question)); copy.textContent = "Скопировано"; }
+    catch (e) { copy.textContent = "Не удалось"; }
+    setTimeout(() => { copy.textContent = "Скопировать"; }, 1500);
+  });
+  const up = el("button", "icon-btn", "👍");
+  const down = el("button", "icon-btn", "👎");
+  up.dataset.vote = "up"; down.dataset.vote = "down";
+  up.title = "Ответ верный"; down.title = "Ответ неверный";
+  [up, down].forEach((b) => { b.type = "button"; b.addEventListener("click", () => sendFeedback(res, question, b.dataset.vote, [up, down])); });
+  tools.append(copy, up, down);
+  meta.append(tools);
   box.append(meta);
   box.dataset.idx = idx;
   $("#messages").append(box);
@@ -164,7 +224,7 @@ async function send(text) {
     history.push({ role: "assistant", content: data.answer });
     answers.push(data);
     const idx = answers.length - 1;
-    addAssistant(data, idx);
+    addAssistant(data, idx, text);
     showSources(idx);
   } catch (e) {
     typing.remove();
