@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+submission.csv
+data/raw/
+data/kb/
+data/sample/
+.claude/
+.DS_Store

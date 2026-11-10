@@ -1,0 +1,12 @@
+.env
+.git
+.venv
+venv
+__pycache__
+dist
+data/raw
+data/kb
+data/sample
+tools/mock_proxy.py
+*.md
+!README.md

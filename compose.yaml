@@ -1,0 +1,17 @@
+services:
+  assistant:
+    build: .
+    image: legal-assistant:latest
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KB_PATH: /app/data/knowledge-base.zip
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - index-cache:/app/cache
+    restart: unless-stopped
+
+volumes:
+  index-cache:

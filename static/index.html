@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Юридический ассистент</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">§</span>
+    <div>
+      <h1>Юридический ассистент</h1>
+      <p class="sub">Ответы только по базе знаний — со ссылками на пункты и статьи</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span id="health" class="pill muted">подключение…</span>
+    <button id="btn-kb" class="ghost" type="button">База знаний</button>
+    <button id="btn-new" class="ghost" type="button">Новый диалог</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="chat" aria-label="Диалог">
+    <div id="messages" class="messages">
+      <div class="empty" id="empty">
+        <h2>Задайте вопрос по договорам, регламентам или законам</h2>
+        <p>Ассистент отвечает только по документам базы, показывает подтверждающие фрагменты и прямо говорит, если данных не хватает.</p>
+        <div class="examples" id="examples"></div>
+      </div>
+    </div>
+    <form id="form" class="composer">
+      <textarea id="input" rows="1" placeholder="Например: какая арендная плата по договору с «Северным Складом»?" required></textarea>
+      <button id="send" type="submit" class="primary">Отправить</button>
+    </form>
+  </section>
+
+  <aside class="panel" aria-label="Источники">
+    <div class="tabs" role="tablist">
+      <button role="tab" class="tab active" data-tab="sources" type="button">Источники ответа</button>
+      <button role="tab" class="tab" data-tab="doc" type="button">Документ</button>
+    </div>
+    <div id="tab-sources" class="tab-body">
+      <p class="hint">Здесь появятся фрагменты документов, на которые опирается ответ. Нажмите на фрагмент, чтобы открыть документ целиком.</p>
+    </div>
+    <div id="tab-doc" class="tab-body hidden">
+      <p class="hint">Выберите источник или документ в базе знаний.</p>
+    </div>
+  </aside>
+</main>
+
+<dialog id="kb-dialog">
+  <div class="dialog-head">
+    <h2>База знаний</h2>
+    <button class="ghost" id="kb-close" type="button">Закрыть</button>
+  </div>
+  <div id="kb-list" class="kb-list"></div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
