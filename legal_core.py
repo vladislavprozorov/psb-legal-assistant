@@ -62,7 +62,10 @@ class Settings:
     emb_model: str = field(default_factory=lambda: env("EMB_MODEL", "baai/bge-m3"))
     reranker_model: str = field(default_factory=lambda: env("RERANKER_MODEL", "qwen/qwen3-reranker-8b"))
     temperature: float = field(default_factory=lambda: env_float("TEMPERATURE", 0.0))
-    max_tokens: int = field(default_factory=lambda: env_int("MAX_TOKENS", 1500, 256, 8192))
+    # MAX_TOKENS платформы может быть мал для reasoning-модели (рассуждения входят в лимит) —
+    # берём не меньше MIN_GEN_TOKENS
+    max_tokens: int = field(default_factory=lambda: max(env_int("MAX_TOKENS", 1500, 256, 8192),
+                                                        env_int("MIN_GEN_TOKENS", 4096, 256, 8192)))
     use_embeddings: bool = field(default_factory=lambda: env("USE_EMBEDDINGS", "1") != "0")
     use_reranker: bool = field(default_factory=lambda: env("USE_RERANKER", "1") != "0")
     use_verifier: bool = field(default_factory=lambda: env("USE_VERIFIER", "1") != "0")
@@ -466,6 +469,12 @@ class LLMClient:
     def __init__(self, settings: Settings):
         self.s = settings
         self.http = httpx.Client(timeout=settings.timeout)
+        self.stats: Counter = Counter()
+        self._stats_lock = threading.Lock()
+
+    def _count(self, key: str, n: int = 1) -> None:
+        with self._stats_lock:
+            self.stats[key] += n
 
     def _post(self, path: str, key: str, payload: dict, retries: int = 3) -> dict:
         if not self.s.api_base or not key:
@@ -497,22 +506,36 @@ class LLMClient:
         if self.s.disable_thinking:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
             payload["reasoning_effort"] = "none"
-        for attempt in range(2):
-            data = self._post("/chat/completions", self.s.api_key, payload)
+        content = ""
+        for attempt in range(3):
+            self._count("chat_calls")
+            try:
+                data = self._post("/chat/completions", self.s.api_key, payload)
+            except Exception as exc:
+                self._count("chat_errors:" + str(exc).split(":")[0][:40])
+                raise
             choice = (data.get("choices") or [{}])[0]
             msg = choice.get("message") or {}
+            if msg.get("reasoning_content") or msg.get("reasoning"):
+                self._count("reasoning_seen")
+            usage = data.get("usage") or {}
+            self._count("completion_tokens", int(usage.get("completion_tokens") or 0))
             content = msg.get("content") or ""
             if isinstance(content, list):  # формат «частей» у некоторых прокси
                 content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
             content = strip_reasoning(content)
-            if content:
+            truncated = choice.get("finish_reason") == "length"
+            # обрезанный JSON: рассуждения съели лимит — ответ оборвался бы на полуслове
+            looks_cut = truncated and content.lstrip().startswith("{") and not _json_complete(content)
+            if content and not looks_cut:
                 return content
-            # пусто: модель «додумала» лимит токенов в рассуждениях — повторяем с запасом
-            if choice.get("finish_reason") == "length" or msg.get("reasoning_content"):
-                payload["max_tokens"] = min(int(payload["max_tokens"] * 2), 8192)
-                log("Пустой ответ модели (лимит токенов) — повтор с увеличенным max_tokens")
-                continue
-            break
+            self._count("empty_content" if not content else "truncated_json")
+            if payload["max_tokens"] >= 8192:
+                break
+            payload["max_tokens"] = min(int(payload["max_tokens"] * 2), 8192)
+            log(f"{'Пустой' if not content else 'Обрезанный'} ответ модели (лимит токенов) — повтор с max_tokens={payload['max_tokens']}")
+        if content:
+            return content
         raise RuntimeError("Модель вернула пустой ответ")
 
     def embed(self, texts: list[str], batch: int = 32) -> np.ndarray:
@@ -1164,6 +1187,15 @@ class LegalAssistant:
 # --------------------------------------------------------------------------- #
 # Утилиты
 # --------------------------------------------------------------------------- #
+
+def _json_complete(text: str) -> bool:
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    try:
+        json.loads(t[t.find("{"): t.rfind("}") + 1])
+        return True
+    except (json.JSONDecodeError, ValueError):
+        return False
+
 
 THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S | re.I)
 

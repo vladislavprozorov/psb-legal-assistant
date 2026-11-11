@@ -21,6 +21,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CHAOS = os.environ.get("MOCK_CHAOS") == "1"
 DELAY = float(os.environ.get("MOCK_DELAY", "0"))
+# Имитация reasoning-модели: рассуждения занимают столько токенов и входят в max_tokens
+REASONING = int(os.environ.get("MOCK_REASONING", "0"))
 _counter = itertools.count()
 _lock = threading.Lock()
 STATS: dict[str, int] = {}
@@ -69,6 +71,14 @@ class Handler(BaseHTTPRequestHandler):
             if mode == "http500":
                 return self._send(500)
             finish = "stop"
+            budget = int(body.get("max_tokens", 0))
+            if REASONING and budget < REASONING:
+                return self._send(200, {"choices": [{"message": {"role": "assistant", "content": "",
+                                        "reasoning_content": "думаю..." * 50}, "finish_reason": "length"}]})
+            if REASONING and budget < REASONING + 300 and not verify:
+                return self._send(200, {"choices": [{"message": {"role": "assistant",
+                                        "content": '{"status": "answer", "answer": "Арендная плата по договору № А-08/2024 сост',
+                                        "reasoning_content": "думаю..."}, "finish_reason": "length"}]})
             if verify:
                 content = json.dumps({"ok": True, "issues": "", "answer": ""}, ensure_ascii=False)
             elif mode == "fenced":

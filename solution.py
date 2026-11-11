@@ -87,8 +87,12 @@ def main() -> None:
                 settings.verify_mode = "off"
                 lc.log(f"Прогноз {projected:.0f} c > {TIME_LIMIT * PROJECTION_LIMIT:.0f} c: самопроверка отключена")
 
+    outcome: dict[str, str] = {}     # qid → model:<status> | extractive | stub | empty | timeout
+    errors: list[str] = []
+
     def work(qid: str, question: str) -> tuple[str, str]:
         if len(question.strip()) < 2:
+            outcome[qid] = "empty"
             return qid, ("Вопрос не задан. Сформулируйте, пожалуйста, вопрос по договорам, "
                          "внутренним документам или законам из базы знаний.")
         adapt_budget()
@@ -100,13 +104,20 @@ def main() -> None:
                 try:
                     res = assistant.answer(question)
                     if res.answer.strip():
+                        outcome[qid] = "model:" + res.status + (":verified" if res.verified else "")
                         return qid, res.answer
                 except Exception as exc:  # noqa: BLE001
-                    lc.log(f"Вопрос {qid}, попытка {attempt + 1}: {type(exc).__name__}: {str(exc)[:200]}")
+                    msg = f"{type(exc).__name__}: {str(exc)[:200]}"
+                    lc.log(f"Вопрос {qid}, попытка {attempt + 1}: {msg}")
+                    with lock:
+                        if len(errors) < 5:
+                            errors.append(msg)
                     time.sleep(2)
             try:
+                outcome[qid] = "extractive"
                 return qid, assistant.extractive_answer(question).answer
             except Exception:  # noqa: BLE001
+                outcome[qid] = "stub"
                 return qid, FALLBACK
         finally:
             with lock:
@@ -121,6 +132,7 @@ def main() -> None:
             lc.log(f"Тайм-аут: без ответа осталось {len(pending)} вопросов — даём ответ из найденных положений")
             for qid, q in questions:
                 if qid not in answers:
+                    outcome[qid] = "timeout"
                     try:
                         answers[qid] = assistant.extractive_answer(q).answer
                     except Exception:  # noqa: BLE001
@@ -137,6 +149,21 @@ def main() -> None:
     write_submission(questions, answers)
     pool.shutdown(wait=False, cancel_futures=True)
     lc.log(f"submission.csv: {len(questions)} строк, {time.time() - START:.0f} c")
+    # Диагностика для логов платформы: откуда ответы и как вела себя модель
+    from collections import Counter
+    kinds = Counter(v.split(":")[0] for v in outcome.values())
+    statuses = Counter(v.split(":")[1] for v in outcome.values() if v.startswith("model:"))
+    verified = sum(1 for v in outcome.values() if v.endswith(":verified"))
+    stats = dict(assistant.client.stats) if assistant.client else {}
+    avg = sum(durations) / len(durations) if durations else 0
+    lc.log("=== СВОДКА ===")
+    lc.log(f"Ответы: {dict(kinds)} | статусы модели: {dict(statuses)} | с самопроверкой: {verified}")
+    lc.log(f"Модель: {settings.model} | max_tokens={settings.max_tokens} (MAX_TOKENS={os.getenv('MAX_TOKENS', '-')}) | "
+           f"эмбеддинги={'да' if assistant.kb.emb is not None else 'нет'} | реранкер={settings.use_reranker} | "
+           f"самопроверка={settings.verify_mode} | потоков={workers} | среднее {avg:.1f} c/вопрос")
+    lc.log(f"Вызовы LLM: {stats}")
+    for e in errors:
+        lc.log("Ошибка: " + e)
     os._exit(0)  # не ждём зависших HTTP-запросов после записи файла
 
 
