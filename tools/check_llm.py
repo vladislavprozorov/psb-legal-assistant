@@ -70,8 +70,8 @@ def main() -> None:
         return f"порядок верный {r}"
 
     step("генерация /chat/completions", chat)
-    emb_ok = step("эмбеддинги /embeddings", emb)
-    rr_ok = step("реранкер /rerank", rerank)
+    emb_ok = step("эмбеддинги /embeddings", emb) if s.use_embeddings else print("SKIP  эмбеддинги (USE_EMBEDDINGS=0) — поиск на BM25") or True
+    rr_ok = step("реранкер /rerank", rerank) if s.use_reranker else print("SKIP  реранкер (USE_RERANKER=0)") or True
     if not emb_ok:
         print("      → без эмбеддингов поиск работает на BM25 (USE_EMBEDDINGS=0 уберёт попытки)")
     if not rr_ok:

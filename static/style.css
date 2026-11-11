@@ -139,6 +139,9 @@ button { font: inherit; cursor: pointer; }
 .src .lbl { color: var(--muted); font-size: 12px; margin-left: 6px; }
 .src .txt { font-size: 13px; margin-top: 6px; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 4px 0 8px; }
+.analysis { background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.analysis ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.analysis li { margin: 4px 0; }
 details.more summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 6px 0 10px; }
 
 .doc-head h3 { margin: 0 0 4px; font-size: 16px; }

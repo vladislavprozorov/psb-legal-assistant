@@ -124,6 +124,7 @@ def chat(req: ChatRequest) -> dict:
         "verified": res.verified,
         "verify_note": res.verify_note,
         "timings": res.timings,
+        "analysis": res.analysis,
     }
 
 

@@ -154,6 +154,14 @@ function showSources(idx) {
     other.forEach((s) => det.append(srcCard(s, false)));
     body.append(det);
   }
+  if (res.analysis && res.analysis.length) {
+    const box = el("div", "analysis");
+    box.append(el("div", "section-title", "Автоматический анализ вопроса"));
+    const ul = el("ul");
+    res.analysis.forEach((h) => ul.append(el("li", null, h)));
+    box.append(ul);
+    body.prepend(box);
+  }
   if (res.verify_note) body.append(el("p", "hint", "Самопроверка: " + res.verify_note));
   setTab("sources");
 }
